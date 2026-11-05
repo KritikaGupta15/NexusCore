@@ -76,7 +76,7 @@ NexusCore/
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-username/NexusCore.git
+git clone https://github.com/KritikaGupta15/NexusCore.git
 ```
 
 ### 2. Run the FastAPI Backend
