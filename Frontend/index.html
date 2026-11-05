@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NexusCore HFT Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function App() {
+      const [bids, setBids] = useState([
+        { price: 105.10, quantity: 45 },
+        { price: 105.00, quantity: 120 },
+        { price: 104.85, quantity: 80 }
+      ]);
+      const [asks, setAsks] = useState([
+        { price: 105.25, quantity: 30 },
+        { price: 105.50, quantity: 90 },
+        { price: 105.80, quantity: 150 }
+      ]);
+      const [trades, setTrades] = useState([
+        { id: 1, buy_id: "buy_102", sell_id: "sell_101", price: 105.25, quantity: 30, time: "13:40:36" },
+        { id: 2, buy_id: "buy_101", sell_id: "sell_101", price: 105.25, quantity: 20, time: "13:25:41" }
+      ]);
+
+      const [orderId, setOrderId] = useState("order_" + Math.floor(Math.random() * 1000));
+      const [side, setSide] = useState("BUY");
+      const [price, setPrice] = useState("105.25");
+      const [quantity, setQuantity] = useState("20");
+      const [wsStatus, setWsStatus] = useState("Disconnected");
+
+      useEffect(() => {
+        const ws = new WebSocket("ws://127.0.0.1:8000/ws/book");
+
+        ws.onopen = () => {
+          setWsStatus("Connected");
+        };
+
+        ws.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          if (message.type === "BOOK_SNAPSHOT" || message.type === "ORDER_UPDATE") {
+            const bookData = message.book || message.data;
+            if (bookData) {
+              if (bookData.bids) setBids(bookData.bids);
+              if (bookData.asks) setAsks(bookData.asks);
+            }
+            if (message.new_trades && message.new_trades.length > 0) {
+              const formattedTrades = message.new_trades.map(t => ({
+                id: Math.random(),
+                buy_id: t.buy_order_id,
+                sell_id: t.sell_order_id,
+                price: t.price,
+                quantity: t.quantity,
+                time: new Date().toLocaleTimeString()
+              }));
+              setTrades(prev => [...formattedTrades, ...prev]);
+            }
+          }
+        };
+
+        ws.onclose = () => {
+          setWsStatus("Disconnected");
+        };
+
+        return () => ws.close();
+      }, []);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        const payload = {
+          order_id: orderId,
+          side: side,
+          price: parseFloat(price),
+          quantity: parseInt(quantity)
+        };
+
+        try {
+          const res = await fetch("http://127.0.0.1:8000/api/v1/orders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          await res.json();
+          setOrderId("order_" + Math.floor(Math.random() * 1000));
+        } catch (err) {
+          console.warn("Backend API not reachable.", err);
+        }
+      };
+
+      return (
+        <div className="p-6 max-w-7xl mx-auto space-y-6">
+          <header className="flex justify-between items-center border-b border-slate-800 pb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-emerald-400">NexusCore HFT</h1>
+              <p className="text-xs text-slate-400">In-Memory Limit Order Matching Engine & Audit Pipeline</p>
+            </div>
+            <div className="flex items-center space-x-3">
+              <span className="text-xs px-2.5 py-1 rounded bg-slate-800 text-slate-300">
+                Engine Status: <strong className="text-emerald-400">ACTIVE</strong>
+              </span>
+              <span className={`text-xs px-2.5 py-1 rounded font-semibold ${wsStatus === 'Connected' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'}`}>
+                WebSocket: {wsStatus}
+              </span>
+            </div>
+          </header>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
+              <h2 className="text-lg font-semibold text-slate-200 mb-4 border-b border-slate-800 pb-2">Order Entry</h2>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Order ID</label>
+                  <input type="text" value={orderId} onChange={e => setOrderId(e.target.value)} className="w-full bg-slate-950 text-white font-semibold border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" required />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Order Side</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setSide("BUY")} className={`py-2 rounded font-bold text-xs ${side === 'BUY' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>BUY</button>
+                    <button type="button" onClick={() => setSide("SELL")} className={`py-2 rounded font-bold text-xs ${side === 'SELL' ? 'bg-rose-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>SELL</button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Price ($)</label>
+                  <input type="number" step="0.01" value={price} onChange={e => setPrice(e.target.value)} className="w-full bg-slate-950 text-white font-semibold border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" required />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Quantity</label>
+                  <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} className="w-full bg-slate-950 text-white font-semibold border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" required />
+                </div>
+
+                <button type="submit" className={`w-full py-3 rounded font-bold text-sm tracking-wide transition ${side === 'BUY' ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950' : 'bg-rose-500 hover:bg-rose-400 text-white'}`}>
+                  SUBMIT {side} ORDER
+                </button>
+              </form>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
+              <h2 className="text-lg font-semibold text-slate-200 mb-4 border-b border-slate-800 pb-2">Order Book Depth</h2>
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <div className="flex justify-between text-slate-500 border-b border-slate-800 pb-1 font-bold">
+                    <span>BID PRICE</span>
+                    <span>QTY</span>
+                  </div>
+                  <div className="space-y-1 mt-2">
+                    {bids.map((b, idx) => (
+                      <div key={idx} className="flex justify-between text-emerald-400 bg-emerald-950/20 px-2 py-1 rounded">
+                        <span className="font-bold">${b.price.toFixed(2)}</span>
+                        <span>{b.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-slate-500 border-b border-slate-800 pb-1 font-bold">
+                    <span>ASK PRICE</span>
+                    <span>QTY</span>
+                  </div>
+                  <div className="space-y-1 mt-2">
+                    {asks.map((a, idx) => (
+                      <div key={idx} className="flex justify-between text-rose-400 bg-rose-950/20 px-2 py-1 rounded">
+                        <span className="font-bold">${a.price.toFixed(2)}</span>
+                        <span>{a.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
+              <h2 className="text-lg font-semibold text-slate-200 mb-4 border-b border-slate-800 pb-2">Executed Trades Audit Stream</h2>
+              <div className="space-y-2 max-h-[320px] overflow-y-auto text-xs">
+                {trades.map(t => (
+                  <div key={t.id} className="p-2.5 bg-slate-950 border border-slate-800 rounded flex justify-between items-center">
+                    <div>
+                      <div className="text-slate-300 font-semibold">{t.buy_id} - {t.sell_id}</div>
+                      <div className="text-slate-500 text-[10px]">{t.time}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-emerald-400 font-bold">${t.price.toFixed(2)}</div>
+                      <div className="text-slate-400">{t.quantity} units</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
